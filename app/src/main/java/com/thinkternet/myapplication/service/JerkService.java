@@ -143,7 +143,7 @@ public class JerkService extends JobService implements SensorEventListener{
                 sensorManager.registerListener(
                         this,
                         sensorStore.get(sensorName),
-                        SensorManager.SENSOR_DELAY_NORMAL
+                        SensorManager.SENSOR_DELAY_NORMAL * 50
                 );
             }
 
@@ -151,6 +151,14 @@ public class JerkService extends JobService implements SensorEventListener{
                 sensorIDStore.remove(sensorName);
             }
         }
+    }
+
+    public float rms(float readings[]){
+        float x = 0;
+        for(float i : readings)
+            x += i*i;
+        x /= (float) readings.length;
+        return (float) Math.sqrt((double)x);
     }
 
     float a[];
@@ -213,9 +221,13 @@ public class JerkService extends JobService implements SensorEventListener{
         dataStash.fireBase.child("sensor")
                 .child("android")
                 .child(SensorUtils.getTime())
-                .setValue(sensorData);
-
-        sensorData.clear();
+                .setValue(sensorData)
+                .addOnCompleteListener(new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        sensorData.clear();
+                    }
+                });
     }
 
     @Override

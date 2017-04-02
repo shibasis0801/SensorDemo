@@ -12,7 +12,6 @@ import java.util.Map;
  */
 
 public abstract class SensorUtils {
-    private static DataStash dataStash = DataStash.getDataStash();
 
     public static String getTime(){
         return (new SimpleDateFormat("yyyy:MM:dd:HH:mm:ss"))
