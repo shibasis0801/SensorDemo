@@ -19,6 +19,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
+import static android.hardware.Sensor.TYPE_ACCELEROMETER;
+import static android.hardware.Sensor.TYPE_LINEAR_ACCELERATION;
+import static android.hardware.Sensor.TYPE_MAGNETIC_FIELD;
+
 /**
  * Created by overlord on 1/4/17.
  */
@@ -27,16 +31,24 @@ public class JerkService extends JobService implements SensorEventListener{
     private DataStash dataStash = DataStash.getDataStash();
 
     public class Sense{
-        Long                timeStamp;
-        ArrayList<Float>    values;
+        long                timeStamp;
+        float               rmsJerk;
+        ArrayList<Float>    orientation;
 
         public Sense() {
-            values = new ArrayList<>();
+            orientation = new ArrayList<>();
+        }
+
+        public Sense(float jerk, float[] valuesArray){
+            timeStamp = SensorUtils.getTimeStamp();
+            rmsJerk = jerk;
+            orientation = SensorUtils.getArrayList(valuesArray);
         }
 
         public Sense(float[] valuesArray){
             timeStamp = SensorUtils.getTimeStamp();
-            values = SensorUtils.getArrayList(valuesArray);
+            orientation = SensorUtils.getArrayList(valuesArray);
+            rmsJerk = 0.0f;
         }
 
         public Long getTimeStamp() {
@@ -47,142 +59,84 @@ public class JerkService extends JobService implements SensorEventListener{
             this.timeStamp = timeStamp;
         }
 
-        public ArrayList<Float> getValues() {
-            return values;
+        public Float getRmsJerk() {
+            return rmsJerk;
         }
 
-        public void setValues(ArrayList<Float> values) {
-            this.values = values;
+        public void setRmsJerk(Float rmsJerk) {
+            this.rmsJerk = rmsJerk;
+        }
+
+        public ArrayList<Float> getOrientation() {
+            return orientation;
+        }
+
+        public void setOrientation(ArrayList<Float> orientation) {
+            this.orientation = orientation;
         }
     }
 
-    public Float differentiate(Float xh, Float x, Long h){
+    private SensorManager sensorManager;
+
+    public Sensor linearAccSensor;
+
+    private Thread sensorThread;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        linearAccSensor = sensorManager.getDefaultSensor(TYPE_LINEAR_ACCELERATION);
+        if(linearAccSensor != null)
+            sensorManager.registerListener(
+                    this,
+                    linearAccSensor,
+                    SensorManager.SENSOR_DELAY_NORMAL * 50
+            );
+    }
+
+
+    public float d_dx(float xh, float x, long h){
         return (1 * (xh - x)) / h;
     }
 
-    public Sense differentiate(Sense one, Sense two){
-        Sense three = new Sense();
-
-        three.timeStamp = (one.timeStamp + two.timeStamp) / 2;
-
-        for(int i = 0; i < one.values.size(); ++i)
-            three.values.add(i,
-                    differentiate(
-                            two.values.get(i),
-                            one.values.get(i),
-                            (two.timeStamp - one.timeStamp)
-                    )
-            );
-        return three;
-    }
-
-    public ArrayList<Sense> differentiate(ArrayList<Sense> data){
-        ArrayList<Sense> differentiatedData = new ArrayList<>();
-
-        for(int i = 1; i < data.size(); ++i){
-            Sense one = data.get(i-1);
-            Sense two = data.get(i);
-            if((two.timeStamp - one.timeStamp) != 0)
-                differentiatedData.add(differentiate(one, two));
-        }
-
-        return differentiatedData;
-    }
-
-    public ArrayList<Sense> getLinearJerk(){
-        return differentiate(linearAcceleration);
-    }
-
-    public ArrayList<Sense> getAngularJerk(){
-        return differentiate(differentiate(differentiate(gyroScopeAngles)));
-    }
-
-
-    public ArrayList<Sense> linearAcceleration = new ArrayList<>();
-    public ArrayList<Sense> gyroScopeAngles = new ArrayList<>();
-
-    private Thread sensorThread;
-    private SensorManager sensorManager;
-
-    private final String
-    accelerometer           = "accelerometer",
-    magnetic                = "magnetic",
-    linear_acceleration     = "linear_acceleration",
-    gyroscope               = "gyroscope",
-    orientation             = "orientation",
-    linearJerk              = "linearJerk",
-    angularJerk             = "angularJerk";
-
-
-    /**
-     *              Sensor Initiation
-     */
-    private Map<String, Sensor>  sensorStore     = new HashMap<>();
-    private Map<String, Integer> sensorIDStore   = new HashMap<>();
-    private Map<Integer, String> reverseIDLookup = new HashMap<>();
-
-    private Map<String, ArrayList<Sense>> sensorData = new HashMap<>();
-
-    public void inputSensors(){
-        sensorIDStore.put(linear_acceleration,  Sensor.TYPE_LINEAR_ACCELERATION);
-        sensorIDStore.put(accelerometer,        Sensor.TYPE_ACCELEROMETER);
-        sensorIDStore.put(gyroscope,            Sensor.TYPE_GYROSCOPE);
-        sensorIDStore.put(magnetic,             Sensor.TYPE_MAGNETIC_FIELD);
-    }
-
-    public void initiateSensors() {
-        for(Map.Entry<String, Integer> sensorDetails : sensorIDStore.entrySet()){
-
-            String sensorName = sensorDetails.getKey();
-            int sensorID      = sensorDetails.getValue();
-            Sensor sensor = sensorManager.getDefaultSensor(sensorID);
-
-            if(sensor != null) {
-                sensorStore.put(sensorName, sensor);
-                reverseIDLookup.put(sensorID, sensorName);
-                sensorManager.registerListener(
-                        this,
-                        sensorStore.get(sensorName),
-                        SensorManager.SENSOR_DELAY_NORMAL * 50
-                );
-            }
-
-            else {
-                sensorIDStore.remove(sensorName);
-            }
-        }
-    }
-
-    public float rms(float readings[]){
+    public float rms(Sense sense){
         float x = 0;
-        for(float i : readings)
+        for(float i : sense.orientation)
             x += i*i;
-        x /= (float) readings.length;
+        x /= (float) sense.orientation.size();
         return (float) Math.sqrt((double)x);
     }
+
+    public float getJerk(Sense previousReading, Sense currentReading){
+        return d_dx(
+                rms(currentReading),
+                rms(previousReading),
+                (currentReading.timeStamp - previousReading.timeStamp)
+        );
+    }
+
+    Sense previousReading, currentReading;
 
     float a[];
     float m[];
     @Override
     public void onSensorChanged(SensorEvent event) {
-        String sensorName = reverseIDLookup.get(event.sensor.getType());
-
-        switch (sensorName){
-            case accelerometer:
+        switch (event.sensor.getType()){
+            case TYPE_ACCELEROMETER:
                 a = event.values;
                 break;
-            case magnetic:
+            case TYPE_MAGNETIC_FIELD:
                 m = event.values;
                 break;
-            case linear_acceleration:
-                linearAcceleration.add(new Sense(event.values));
-                break;
-            case gyroscope:
-                gyroScopeAngles.add(new Sense(event.values));
+            case TYPE_LINEAR_ACCELERATION:
+                previousReading = currentReading;
+                currentReading  = new Sense(event.values);
                 break;
         }
 
-        if (a != null && m != null) {
+        if (previousReading != null &&
+                a != null && m != null) {
             float R[] = new float[9];
             float I[] = new float[9];
 
@@ -196,38 +150,16 @@ public class JerkService extends JobService implements SensorEventListener{
             if (success) {
                 float ypr[] = new float[3];
                 SensorManager.getOrientation(R, ypr);
+                Sense sense = new Sense(getJerk(previousReading, currentReading), ypr);
 
-                if(sensorData.get(orientation) == null)
-                    sensorData.put(orientation, new ArrayList<Sense>());
+                dataStash.fireBase
+                        .child("sensor")
+                        .child("android")
+                        .child(SensorUtils.getTime())
+                        .setValue(sense);
 
-                sensorData.get(orientation).add(new Sense(ypr));
-                Log.d(orientation, "" + ypr[0]);
             }
         }
-        if(sensorData.get(orientation) != null)
-            if(sensorData.get(orientation).size() > 10)
-                sendBatch();
-
-    }
-
-    public void sendBatch(){
-        sensorData.put(linearJerk, getLinearJerk());
-//        sensorData.put(angularJerk, getAngularJerk());
-
-        for(Map.Entry<String, ArrayList<Sense>> entry : sensorData.entrySet())
-            for(Sense sense : entry.getValue())
-                Log.d(entry.getKey(), sense.getValues().get(0) + "");
-
-        dataStash.fireBase.child("sensor")
-                .child("android")
-                .child(SensorUtils.getTime())
-                .setValue(sensorData)
-                .addOnCompleteListener(new OnCompleteListener<Void>() {
-                    @Override
-                    public void onComplete(@NonNull Task<Void> task) {
-                        sensorData.clear();
-                    }
-                });
     }
 
     @Override
@@ -239,7 +171,7 @@ public class JerkService extends JobService implements SensorEventListener{
             }
         });
         sensorThread.start();
-        return true;
+        return false;
     }
 
     public void receiveAndroidSensorData(){
@@ -251,13 +183,6 @@ public class JerkService extends JobService implements SensorEventListener{
         return true;
     }
 
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-        inputSensors();
-        initiateSensors();
-    }
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {  }
