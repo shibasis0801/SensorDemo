@@ -1,0 +1,42 @@
+{
+  "project_info": {
+    "project_number": "434064450690",
+    "firebase_url": "https://whatsapp-copy.firebaseio.com",
+    "project_id": "whatsapp-copy",
+    "storage_bucket": "whatsapp-copy.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:434064450690:android:f075e72a2e0c548d",
+        "android_client_info": {
+          "package_name": "com.thinkternet.myapplication"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "434064450690-iier4vqmatu6s5oe26purhn5qsd3o61k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwcdxuRznMOVVEmSPzO2roT3e5RhRlzsY"
+        }
+      ],
+      "services": {
+        "analytics_service": {
+          "status": 1
+        },
+        "appinvite_service": {
+          "status": 1,
+          "other_platform_oauth_client": []
+        },
+        "ads_service": {
+          "status": 2
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
